@@ -6,7 +6,7 @@ Building a modern computer from first principles
 * [x] Project 1: Boolean Logic
 * [x] Project 2: Boolean Arithmetic
 * [x] Project 3: Sequential Logic
-* [ ] Project 4: Machine Language
+* [x] Project 4: Machine Language
 * [ ] Project 5: Computer Architecture
 * [ ] Project 6: Assembler
 * [ ] Project 7: VM I: Stack Arithmetic
