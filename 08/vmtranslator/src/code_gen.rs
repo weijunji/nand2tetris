@@ -123,18 +123,37 @@ fn write_get_addr<F: Write>(fname: &str, target: &mut F, loc: &Location, num: &u
 }
 
 macro_rules! write_branch {
-    ($target: expr, $asm:expr, $label: expr) => {
+    ($target: expr, $fname:expr, $asm:expr, $label: expr) => {
         write!($target, "D = A - D\n").unwrap();
-        write!($target, "@TRANS_LABEL${}\n", $label).unwrap();
+        write!($target, "@{}.TRANS_LABEL${}\n", $fname, $label).unwrap();
         write!($target, "D;{}\n", $asm).unwrap();
         write!($target, "D = 0\n").unwrap();
-        write!($target, "@TRANS_LABEL_END${}\n", $label).unwrap();
+        write!($target, "@{}.TRANS_LABEL_END${}\n", $fname, $label).unwrap();
         write!($target, "0;JMP\n").unwrap();
-        write!($target, "(TRANS_LABEL${})\n", $label).unwrap();
+        write!($target, "({}.TRANS_LABEL${})\n", $fname, $label).unwrap();
         write!($target, "D = -1\n").unwrap();
-        write!($target, "(TRANS_LABEL_END${})\n", $label).unwrap();
+        write!($target, "({}.TRANS_LABEL_END${})\n", $fname, $label).unwrap();
         $label += 1;
     };
+}
+
+pub fn write_push_d<F: Write>(target: &mut F) {
+    write!(target, "@SP\n").unwrap();
+    write!(target, "A = M\n").unwrap();
+    write!(target, "M = D\n").unwrap();
+    write!(target, "@SP\n").unwrap();
+    write!(target, "M = M + 1\n").unwrap();
+}
+
+pub fn write_pop_d<F: Write>(target: &mut F) {
+    write!(target, "@SP\n").unwrap();
+    write!(target, "M = M - 1\n").unwrap();
+    // write!(target, "@SP\n").unwrap();
+    write!(target, "A = M\n").unwrap();
+    write!(target, "A = M\n").unwrap();
+    write!(target, "D = D + A\n").unwrap(); // swap A and D
+    write!(target, "A = D - A\n").unwrap();
+    write!(target, "M = D - A\n").unwrap();
 }
 
 pub fn code_gen<F: Write>(ast: &Vec<AST>, fname: &str, target: &mut F) {
@@ -144,22 +163,26 @@ pub fn code_gen<F: Write>(ast: &Vec<AST>, fname: &str, target: &mut F) {
         match line {
             AST::StackOp(StackOperator::Push, loc, num) => {
                 write_get_num(fname, target, &loc, &num);
-                write!(target, "@SP\n").unwrap();
-                write!(target, "A = M\n").unwrap();
-                write!(target, "M = D\n").unwrap();
-                write!(target, "@SP\n").unwrap();
-                write!(target, "M = M + 1\n").unwrap();
+                write_push_d(target);
             },
             AST::StackOp(StackOperator::Pop, loc, num) => {
                 write_get_addr(fname, target, &loc, &num);
+                write_pop_d(target);
+            },
+            AST::BranchOp(BranchOperator::Label, label) => {
+                write!(target, "({}.LABEL${})\n", fname, label).unwrap();
+            },
+            AST::BranchOp(BranchOperator::If, label) => {
                 write!(target, "@SP\n").unwrap();
                 write!(target, "M = M - 1\n").unwrap();
-                // write!(target, "@SP\n").unwrap();
                 write!(target, "A = M\n").unwrap();
-                write!(target, "A = M\n").unwrap();
-                write!(target, "D = D + A\n").unwrap(); // swap A and D
-                write!(target, "A = D - A\n").unwrap();
-                write!(target, "M = D - A\n").unwrap();
+                write!(target, "D = M\n").unwrap();
+                write!(target, "@{}.LABEL${}\n", fname, label).unwrap();
+                write!(target, "D;JNE\n").unwrap();
+            },
+            AST::BranchOp(BranchOperator::Goto, label) => {
+                write!(target, "@{}.LABEL${}\n", fname, label).unwrap();
+                write!(target, "0;JMP\n").unwrap();
             },
             AST::SingleOp(SingleOperator::Not) => {
                 write!(target, "@SP\n").unwrap();
@@ -185,6 +208,64 @@ pub fn code_gen<F: Write>(ast: &Vec<AST>, fname: &str, target: &mut F) {
                 write!(target, "@SP\n").unwrap();
                 write!(target, "M = M + 1\n").unwrap();
             },
+            AST::SingleOp(SingleOperator::Ret) => {
+                write!(target, "@ARG\n").unwrap();
+                write!(target, "D = M\n").unwrap();
+                write!(target, "@R15\n").unwrap();
+                write!(target, "M = D\n").unwrap();
+                // ret value
+                write!(target, "@SP\n").unwrap();
+                write!(target, "M = M - 1\n").unwrap();
+                // write!(target, "@SP\n").unwrap();
+                write!(target, "A = M\n").unwrap();
+                write!(target, "D = M\n").unwrap();
+                write!(target, "@R14\n").unwrap();
+                write!(target, "M = D\n").unwrap();
+
+                write!(target, "@LCL\n").unwrap();
+                write!(target, "D = M\n").unwrap();
+                write!(target, "@SP\n").unwrap();
+                write!(target, "M = D\n").unwrap();
+
+                write!(target, "@THAT\n").unwrap();
+                write!(target, "D = A\n").unwrap();
+                write_pop_d(target);
+
+                write!(target, "@THIS\n").unwrap();
+                write!(target, "D = A\n").unwrap();
+                write_pop_d(target);
+
+                write!(target, "@ARG\n").unwrap();
+                write!(target, "D = A\n").unwrap();
+                write_pop_d(target);
+
+                write!(target, "@LCL\n").unwrap();
+                write!(target, "D = A\n").unwrap();
+                write_pop_d(target);
+
+                // ret addr
+                write!(target, "@SP\n").unwrap();
+                write!(target, "M = M - 1\n").unwrap();
+                // write!(target, "@SP\n").unwrap();
+                write!(target, "A = M\n").unwrap();
+                write!(target, "D = M\n").unwrap();
+                write!(target, "@R13\n").unwrap();
+                write!(target, "M = D\n").unwrap(); // ret addr
+                
+                write!(target, "@R14\n").unwrap();
+                write!(target, "D = M\n").unwrap();
+                write!(target, "@R15\n").unwrap();
+                write!(target, "A = M\n").unwrap();
+                write!(target, "M = D\n").unwrap(); // ret val
+
+                write!(target, "@R15\n").unwrap();
+                write!(target, "D = M + 1\n").unwrap();
+                write!(target, "@SP\n").unwrap();
+                write!(target, "M = D\n").unwrap();
+                write!(target, "@R13\n").unwrap();
+                write!(target, "A = M\n").unwrap();
+                write!(target, "0;JMP\n").unwrap();
+            },
             AST::SingleOp(op) => {
                 write!(target, "@SP\n").unwrap();
                 write!(target, "M = M - 1\n").unwrap();
@@ -209,13 +290,13 @@ pub fn code_gen<F: Write>(ast: &Vec<AST>, fname: &str, target: &mut F) {
                         write!(target, "D = A | D\n").unwrap();
                     },
                     SingleOperator::Eq => {
-                        write_branch!(target, "JEQ", label);
+                        write_branch!(target, fname, "JEQ", label);
                     },
                     SingleOperator::Lt => {
-                        write_branch!(target, "JLT", label);
+                        write_branch!(target, fname, "JLT", label);
                     },
                     SingleOperator::Gt => {
-                        write_branch!(target, "JGT", label);
+                        write_branch!(target, fname, "JGT", label);
                     },
                     _ => {
                         panic!("Should not reach here");
@@ -226,7 +307,66 @@ pub fn code_gen<F: Write>(ast: &Vec<AST>, fname: &str, target: &mut F) {
                 write!(target, "M = D\n").unwrap();
                 write!(target, "@SP\n").unwrap();
                 write!(target, "M = M + 1\n").unwrap();
-            }
+            },
+            AST::FunctionOp(FunctionOperator::Func, func, arg) => {
+                write!(target, "({})\n", func).unwrap();
+                if *arg > 0 {
+                    write!(target, "@{}\n", arg).unwrap();
+                    write!(target, "D = A\n").unwrap();
+                    write!(target, "({}.{}$INIT_LOOP)\n", fname, func).unwrap();
+                    write!(target, "D = D - 1\n").unwrap();
+                    write!(target, "@{}.{}$INIT_END\n", fname, func).unwrap();
+                    write!(target, "D;JLT\n").unwrap();
+
+                    write!(target, "@SP\n").unwrap();
+                    write!(target, "A = M\n").unwrap();
+                    write!(target, "M = 0\n").unwrap();
+                    write!(target, "@SP\n").unwrap();
+                    write!(target, "M = M + 1\n").unwrap();
+
+                    write!(target, "@{}.{}$INIT_LOOP\n", fname, func).unwrap();
+                    write!(target, "0;JMP\n").unwrap();
+                    write!(target, "({}.{}$INIT_END)\n", fname, func).unwrap();
+                }
+            },
+            AST::FunctionOp(FunctionOperator::Call, func, arg) => {
+                write!(target, "@{}$retAddr{}\n", fname, label).unwrap();
+                write!(target, "D = A\n").unwrap();
+                write_push_d(target);
+
+                write!(target, "@LCL\n").unwrap();
+                write!(target, "D = M\n").unwrap();
+                write_push_d(target);
+                
+                write!(target, "@ARG\n").unwrap();
+                write!(target, "D = M\n").unwrap();
+                write_push_d(target);
+
+                write!(target, "@THIS\n").unwrap();
+                write!(target, "D = M\n").unwrap();
+                write_push_d(target);
+
+                write!(target, "@THAT\n").unwrap();
+                write!(target, "D = M\n").unwrap();
+                write_push_d(target);
+
+                write!(target, "@SP\n").unwrap();
+                write!(target, "D = M\n").unwrap();
+                write!(target, "@{}\n", 5 + arg).unwrap();
+                write!(target, "D = D - A\n").unwrap();
+                write!(target, "@ARG\n").unwrap();
+                write!(target, "M = D\n").unwrap();
+
+                write!(target, "@SP\n").unwrap();
+                write!(target, "D = M\n").unwrap();
+                write!(target, "@LCL\n").unwrap();
+                write!(target, "M = D\n").unwrap();
+                write!(target, "@{}\n", func).unwrap();
+                write!(target, "0;JMP\n").unwrap();
+                
+                write!(target, "({}$retAddr{})\n", fname, label).unwrap();
+                label += 1;
+            },
         }
     }
 }

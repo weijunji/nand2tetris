@@ -9,8 +9,8 @@ Building a modern computer from first principles
 * [x] Project 4: Machine Language
 * [x] Project 5: Computer Architecture
 * [x] Project 6: Assembler
-* [ ] Project 7: VM I: Stack Arithmetic
-* [ ] Project 8: VM II: Program Control
+* [x] Project 7: VM I: Stack Arithmetic
+* [x] Project 8: VM II: Program Control
 * [ ] Project 9: High-Level Language
 * [ ] Project 10: Compiler I: Syntax Analysis
 * [ ] Project 11: Compiler II: Code Generation
